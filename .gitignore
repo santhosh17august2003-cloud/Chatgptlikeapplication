@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual Environment
+backend/venv/
+venv/
+
+# Environment Variables (SECRETS - never commit!)
+.env
+backend/.env
+
+# Django
+db.sqlite3
+backend/db.sqlite3
+backend/media/
+
+# Scratch / Test files
+backend/scratch/
+
+# Node.js
+node_modules/
+frontend/node_modules/
+
+# Vite build output
+frontend/dist/
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# Gemini / Agent artifacts
+.gemini/
+.agents/
