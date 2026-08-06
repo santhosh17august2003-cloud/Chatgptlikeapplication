@@ -32,7 +32,7 @@ function ForgotPassword({
   };
 
   const handleRequestOtpSubmit = async (e) => {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
     setErrorMsg(null);
 
     try {
@@ -175,7 +175,31 @@ function ForgotPassword({
                 onChange={e => setForgotOtp(e.target.value)}
               />
             </div>
-            <button type="submit" className="auth-submit-btn">Verify Code</button>
+            <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
+              <button type="submit" className="auth-submit-btn" style={{ flex: 1, margin: 0 }}>Verify Code</button>
+              <button 
+                type="button" 
+                onClick={() => handleRequestOtpSubmit()} 
+                className="auth-submit-btn" 
+                style={{ 
+                  flex: 1, 
+                  margin: 0,
+                  background: 'rgba(255, 255, 255, 0.08)', 
+                  border: '1px solid rgba(255, 255, 255, 0.15)',
+                  color: 'var(--text-muted)'
+                }}
+                onMouseEnter={(e) => {
+                  e.target.style.background = 'rgba(255, 255, 255, 0.15)';
+                  e.target.style.color = '#fff';
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.background = 'rgba(255, 255, 255, 0.08)';
+                  e.target.style.color = 'var(--text-muted)';
+                }}
+              >
+                Resend OTP
+              </button>
+            </div>
           </form>
         )}
 
