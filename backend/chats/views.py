@@ -12,6 +12,7 @@ import os
 import json
 import logging
 import random
+import traceback
 from django.shortcuts import get_object_or_404
 from django.conf import settings
 from django.contrib.auth.models import User
@@ -181,54 +182,64 @@ def auth_request_otp(request):
     """
     POST: Requests a 6-digit OTP for password resetting.
     """
-    username_or_email = request.data.get('username', '').strip()
-    if not username_or_email:
-        return Response(
-            {'error': 'Username or email is required.'},
-            status=status.HTTP_400_BAD_REQUEST
-        )
-
-    user = User.objects.filter(username=username_or_email).first()
-    if not user:
-        user = User.objects.filter(email=username_or_email).first()
-
-    if not user:
-        return Response(
-            {'error': 'No user found with the provided username/email.'},
-            status=status.HTTP_404_NOT_FOUND
-        )
-
-    # Generate 6-digit OTP code
-    otp_code = str(random.randint(100000, 999999))
-
-    # Save code to DB
-    PasswordResetOTP.objects.filter(user=user).delete()  # Clear older codes
-    PasswordResetOTP.objects.create(user=user, otp=otp_code)
-
-    # Try sending via email, fallback to console logging
     try:
-        send_mail(
-            subject='Your Password Reset Verification Code',
-            message=(
-                f'Hi {user.username},\n\n'
-                f'Your 6-digit OTP code is: {otp_code}\n\n'
-                f'Please enter this code in the app to reset your password.\n\n'
-                f'Regards,\nGemini Workspace Team'
-            ),
-            from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', None) or 'noreply@workspace.com',
-            recipient_list=[user.email],
-            fail_silently=False,
+        username_or_email = request.data.get('username', '').strip()
+        if not username_or_email:
+            return Response(
+                {'error': 'Username or email is required.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        user = User.objects.filter(username=username_or_email).first()
+        if not user:
+            user = User.objects.filter(email=username_or_email).first()
+
+        if not user:
+            return Response(
+                {'error': 'No user found with the provided username/email.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Generate 6-digit OTP code
+        otp_code = str(random.randint(100000, 999999))
+
+        # Save code to DB
+        PasswordResetOTP.objects.filter(user=user).delete()  # Clear older codes
+        PasswordResetOTP.objects.create(user=user, otp=otp_code)
+
+        # Try sending via email, fallback to console logging
+        try:
+            send_mail(
+                subject='Your Password Reset Verification Code',
+                message=(
+                    f'Hi {user.username},\n\n'
+                    f'Your 6-digit OTP code is: {otp_code}\n\n'
+                    f'Please enter this code in the app to reset your password.\n\n'
+                    f'Regards,\nGemini Workspace Team'
+                ),
+                from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', None) or 'noreply@workspace.com',
+                recipient_list=[user.email],
+                fail_silently=False,
+            )
+        except Exception as mail_err:
+            print(f"--- EMAIL SENDING EXCEPTION: {str(mail_err)} ---")
+
+        # Print to console for development debug
+        print(f"\n--- SECURITY RESET PASSWORD OTP FOR {user.username}: {otp_code} ---\n")
+
+        return Response({
+            'message': 'Verification code sent successfully!',
+            'otp_debug': otp_code  # Sent in payload for seamless local testing
+        })
+    except Exception as err:
+        tb_str = traceback.format_exc()
+        return Response(
+            {
+                'error': f'Failed to request OTP: {str(err)}',
+                'traceback': tb_str
+            },
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
-    except Exception as mail_err:
-        print(f"--- EMAIL SENDING EXCEPTION: {str(mail_err)} ---")
-
-    # Print to console for development debug
-    print(f"\n--- SECURITY RESET PASSWORD OTP FOR {user.username}: {otp_code} ---\n")
-
-    return Response({
-        'message': 'Verification code sent successfully!',
-        'otp_debug': otp_code  # Sent in payload for seamless local testing
-    })
 
 @api_view(['POST'])
 def auth_verify_otp(request):
