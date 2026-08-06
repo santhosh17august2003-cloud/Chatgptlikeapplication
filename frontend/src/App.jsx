@@ -98,6 +98,9 @@ function App() {
       setMessages(data.messages || []);
       setActiveDocuments(data.documents || []);
       setThreadTitle(data.title || 'New Chat');
+      setThreads(prev => prev.map(t =>
+        t.id === threadId ? { ...t, title: data.title || 'New Chat' } : t
+      ));
       if (data.documents && data.documents.length > 0) {
         setChatMode('doc');
       } else {

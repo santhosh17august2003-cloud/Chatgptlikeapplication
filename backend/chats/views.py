@@ -534,10 +534,13 @@ def send_message(request, thread_id):
         content=user_content
     )
 
-    if thread.messages.count() == 1:
-        title_suggestion = user_content[:40] + ("..." if len(user_content) > 40 else "")
-        thread.title = title_suggestion
-        thread.save()
+    if thread.title == "New Chat":
+        # Strip status indicators and use clean first question as title
+        clean_content = user_content.strip()
+        if not clean_content.startswith("📄 [Document Uploaded:"):
+            title_suggestion = clean_content[:40] + ("..." if len(clean_content) > 40 else "")
+            thread.title = title_suggestion
+            thread.save()
 
     docs = thread.documents.all()
 
