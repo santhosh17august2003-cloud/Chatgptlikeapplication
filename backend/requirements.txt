@@ -5,3 +5,7 @@ pymysql
 google-generativeai
 pypdf
 python-dotenv
+gunicorn
+whitenoise
+dj-database-url
+psycopg2-binary

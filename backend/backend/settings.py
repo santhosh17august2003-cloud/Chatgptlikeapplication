@@ -14,6 +14,7 @@ from pathlib import Path
 import os
 import sys
 from dotenv import load_dotenv
+import dj_database_url
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -54,6 +55,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',  # Must be at the top
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -82,64 +84,79 @@ TEMPLATES = [
 WSGI_APPLICATION = 'backend.wsgi.application'
 
 
-# Database Configuration with PyMySQL and SQLite fallback
+# Database Configuration
+# Uses DATABASE_URL (Render PostgreSQL) if set, otherwise falls back to local MySQL/SQLite
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
-DB_NAME = os.getenv('DB_NAME', 'chat_rag_db')
-DB_USER = os.getenv('DB_USER', 'root')
-DB_PASSWORD = os.getenv('DB_PASSWORD', '12345678')
-DB_HOST = os.getenv('DB_HOST', '127.0.0.1')
-DB_PORT = os.getenv('DB_PORT', '3306')
+DATABASE_URL = os.getenv('DATABASE_URL')
 
-# Mock MySQLdb using PyMySQL
-try:
-    import pymysql
-    pymysql.install_as_MySQLdb()
-except ImportError:
-    pass
-
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.mysql',
-        'NAME': DB_NAME,
-        'USER': DB_USER,
-        'PASSWORD': DB_PASSWORD,
-        'HOST': DB_HOST,
-        'PORT': DB_PORT,
-        'OPTIONS': {
-            'charset': 'utf8mb4',
-        }
-    }
-}
-
-# Test connection to MySQL. If it fails, fall back to SQLite for seamless installation.
-if 'test' not in sys.argv:
-    try:
-        import MySQLdb
-        conn = MySQLdb.connect(
-            host=DB_HOST,
-            user=DB_USER,
-            passwd=DB_PASSWORD,
-            port=int(DB_PORT),
-            connect_timeout=2
+if DATABASE_URL:
+    # Production: Render PostgreSQL via DATABASE_URL
+    DATABASES = {
+        'default': dj_database_url.config(
+            default=DATABASE_URL,
+            conn_max_age=600
         )
-        # Create database if it does not exist
-        cursor = conn.cursor()
-        cursor.execute(f"CREATE DATABASE IF NOT EXISTS {DB_NAME} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;")
-        conn.close()
-        print(f"--- Connected to MySQL database '{DB_NAME}' successfully! ---")
-    except Exception as e:
-        print("----------------------------------------------------------------------")
-        print(f"WARNING: MySQL connection failed: {e}")
-        print("Falling back to local SQLite database 'db.sqlite3' for development.")
-        print("To use MySQL, make sure the service is running and credentials in .env are correct.")
-        print("----------------------------------------------------------------------")
-        DATABASES = {
-            'default': {
-                'ENGINE': 'django.db.backends.sqlite3',
-                'NAME': BASE_DIR / 'db.sqlite3',
+    }
+    print("--- Connected to production database via DATABASE_URL ---")
+else:
+    # Local development: MySQL with SQLite fallback
+    DB_NAME = os.getenv('DB_NAME', 'chat_rag_db')
+    DB_USER = os.getenv('DB_USER', 'root')
+    DB_PASSWORD = os.getenv('DB_PASSWORD', '12345678')
+    DB_HOST = os.getenv('DB_HOST', '127.0.0.1')
+    DB_PORT = os.getenv('DB_PORT', '3306')
+
+    # Mock MySQLdb using PyMySQL
+    try:
+        import pymysql
+        pymysql.install_as_MySQLdb()
+    except ImportError:
+        pass
+
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.mysql',
+            'NAME': DB_NAME,
+            'USER': DB_USER,
+            'PASSWORD': DB_PASSWORD,
+            'HOST': DB_HOST,
+            'PORT': DB_PORT,
+            'OPTIONS': {
+                'charset': 'utf8mb4',
             }
         }
+    }
+
+    if 'test' not in sys.argv:
+        try:
+            import MySQLdb
+            conn = MySQLdb.connect(
+                host=DB_HOST,
+                user=DB_USER,
+                passwd=DB_PASSWORD,
+                port=int(DB_PORT),
+                connect_timeout=2
+            )
+            cursor = conn.cursor()
+            cursor.execute(
+                f"CREATE DATABASE IF NOT EXISTS {DB_NAME}"
+                " CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+            )
+            conn.close()
+            print(f"--- Connected to MySQL database '{DB_NAME}' successfully! ---")
+        except Exception as e:
+            print("------------------------------------------------------")
+            print(f"WARNING: MySQL connection failed: {e}")
+            print("Falling back to local SQLite database for development.")
+            print("------------------------------------------------------")
+            DATABASES = {
+                'default': {
+                    'ENGINE': 'django.db.backends.sqlite3',
+                    'NAME': BASE_DIR / 'db.sqlite3',
+                }
+            }
+
 
 
 # Password validation
@@ -177,6 +194,8 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 # Media files (for uploaded documents)
 MEDIA_URL = '/media/'
