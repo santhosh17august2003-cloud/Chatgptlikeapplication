@@ -219,7 +219,7 @@ def auth_request_otp(request):
                         "Content-Type": "application/json"
                     },
                     json={
-                        "from": "onboarding@resend.dev",
+                        "from": "no-reply@chatdocgpt.online",
                         "to": user.email,
                         "subject": "Your Password Reset Verification Code",
                         "html": (
