@@ -22,6 +22,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from pypdf import PdfReader
 import google.generativeai as genai
+import requests
 
 # pyrefly: ignore [missing-import]
 from .models import (
@@ -207,22 +208,52 @@ def auth_request_otp(request):
         PasswordResetOTP.objects.filter(user=user).delete()  # Clear older codes
         PasswordResetOTP.objects.create(user=user, otp=otp_code)
 
-        # Try sending via email, fallback to console logging
-        try:
-            send_mail(
-                subject='Your Password Reset Verification Code',
-                message=(
-                    f'Hi {user.username},\n\n'
-                    f'Your 6-digit OTP code is: {otp_code}\n\n'
-                    f'Please enter this code in the app to reset your password.\n\n'
-                    f'Regards,\nGemini Workspace Team'
-                ),
-                from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', None) or 'noreply@workspace.com',
-                recipient_list=[user.email],
-                fail_silently=False,
-            )
-        except Exception as mail_err:
-            print(f"--- EMAIL SENDING EXCEPTION: {str(mail_err)} ---")
+        # Try sending email (Resend API for Render to bypass SMTP blocking, fallback to send_mail)
+        resend_api_key = os.getenv('RESEND_API_KEY')
+        if resend_api_key:
+            try:
+                res = requests.post(
+                    "https://api.resend.com/emails",
+                    headers={
+                        "Authorization": f"Bearer {resend_api_key}",
+                        "Content-Type": "application/json"
+                    },
+                    json={
+                        "from": "onboarding@resend.dev",
+                        "to": user.email,
+                        "subject": "Your Password Reset Verification Code",
+                        "html": (
+                            f"<p>Hi {user.username},</p>"
+                            f"<p>Your 6-digit OTP code is: <strong>{otp_code}</strong></p>"
+                            "<p>Please enter this code in the app to reset your password.</p>"
+                            "<p>Regards,<br>Gemini Workspace Team</p>"
+                        )
+                    },
+                    timeout=10
+                )
+                print(f"--- RESEND API RESPONSE: {res.status_code} - {res.text} ---")
+            except Exception as resend_err:
+                print(f"--- RESEND EMAIL SENDING EXCEPTION: {str(resend_err)} ---")
+        else:
+            try:
+                from_email = (
+                    getattr(settings, 'DEFAULT_FROM_EMAIL', None)
+                    or 'noreply@workspace.com'
+                )
+                send_mail(
+                    subject='Your Password Reset Verification Code',
+                    message=(
+                        f'Hi {user.username},\n\n'
+                        f'Your 6-digit OTP code is: {otp_code}\n\n'
+                        f'Please enter this code in the app to reset your password.\n\n'
+                        f'Regards,\nGemini Workspace Team'
+                    ),
+                    from_email=from_email,
+                    recipient_list=[user.email],
+                    fail_silently=False,
+                )
+            except Exception as mail_err:
+                print(f"--- EMAIL SENDING EXCEPTION: {str(mail_err)} ---")
 
         # Print to console for development debug
         print(f"\n--- SECURITY RESET PASSWORD OTP FOR {user.username}: {otp_code} ---\n")
