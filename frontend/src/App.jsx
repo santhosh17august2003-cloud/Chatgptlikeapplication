@@ -658,7 +658,7 @@ function App() {
 
                   <textarea
                     className="chat-textarea"
-                    placeholder={activeDocuments.length > 0 ? "Ask something about the documents..." : "Message Gemini..."}
+                    placeholder={activeDocuments.length > 0 ? "Ask something about the documents..." : "Message..."}
                     value={inputValue}
                     onChange={(e) => setInputValue(e.target.value)}
                     onKeyDown={handleKeyDown}
