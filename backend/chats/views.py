@@ -34,9 +34,7 @@ logger = logging.getLogger(__name__)
 
 # Initialize Gemini API Configuration
 def configure_gemini():
-    """
-    Configures the Google Gemini API client using the environment key.
-    """
+    
     api_key = os.getenv("GEMINI_API_KEY", "").strip()
     if not api_key or api_key == "your_gemini_api_key_here":
         raise ValueError(
@@ -47,9 +45,7 @@ def configure_gemini():
 
 # Helper: Chunk Text
 def chunk_text(text, chunk_size=800, overlap=150):
-    """
-    Partitions text into smaller chunks for vector ingestion.
-    """
+ 
     chunks = []
     start = 0
     text_len = len(text)
@@ -68,19 +64,14 @@ def chunk_text(text, chunk_size=800, overlap=150):
 
 # Helper: Cosine Similarity
 def cosine_similarity(vec1, vec2):
-    """
-    Computes dot-product similarity (vectors are pre-normalized).
-    """
+
     if not vec1 or not vec2:
         return 0.0
     return sum(a * b for a, b in zip(vec1, vec2))
 
 # Helper: Get Authenticated User
 def get_authenticated_user(request):
-    """
-    Retrieves the User associated with the Authorization Token header.
-    Expects: 'Token <token_string>'
-    """
+ 
     auth_header = request.headers.get('Authorization', '')
     if not auth_header.startswith('Token '):
         return None
@@ -100,9 +91,7 @@ def get_authenticated_user(request):
 
 @api_view(['POST'])
 def auth_register(request):
-    """
-    POST: Register a new user, hashes password, and returns a session token.
-    """
+
     username = request.data.get('username', '').strip()
     email = request.data.get('email', '').strip()
     password = request.data.get('password', '').strip()

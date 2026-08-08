@@ -458,8 +458,8 @@ function App() {
     <div className="app-container">
       {/* Mobile Sidebar Overlay Backdrop */}
       {sidebarOpen && (
-        <div 
-          className="sidebar-overlay" 
+        <div
+          className="sidebar-overlay"
           onClick={() => setSidebarOpen(false)}
           style={{
             position: 'absolute',
@@ -677,7 +677,7 @@ function App() {
           ) : (
             <div className="empty-state">
               <div className="empty-state-icon">🤖</div>
-              <h2 className="empty-state-title">Welcome to Gemini Workspace</h2>
+              <h2 className="empty-state-title">Welcome </h2>
               <p className="empty-state-desc">
                 Create a new chat session to start a conversation or analyze documents.
               </p>

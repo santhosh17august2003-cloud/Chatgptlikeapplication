@@ -1,7 +1,4 @@
-"""
-URL patterns for the chats app.
-Contains regular expression routes for authentication and chat endpoints.
-"""
+
 from django.urls import re_path
 # pyrefly: ignore [missing-import]
 from . import views
