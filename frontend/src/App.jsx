@@ -20,6 +20,7 @@ function App() {
   const [activeDocuments, setActiveDocuments] = useState([]);
   const [threadTitle, setThreadTitle] = useState('New Chat');
   const [chatMode, setChatMode] = useState('ai');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Input states
   const [inputValue, setInputValue] = useState('');
@@ -455,14 +456,37 @@ function App() {
   // 4. MAIN CHAT WORKSPACE
   return (
     <div className="app-container">
+      {/* Mobile Sidebar Overlay Backdrop */}
+      {sidebarOpen && (
+        <div 
+          className="sidebar-overlay" 
+          onClick={() => setSidebarOpen(false)}
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.6)',
+            backdropFilter: 'blur(4px)',
+            zIndex: 90
+          }}
+        />
+      )}
+
       {/* Sidebar: Chat Threads */}
-      <aside className="sidebar">
+      <aside className={`sidebar ${sidebarOpen ? 'active' : ''}`}>
         <div className="sidebar-header">
-          <div className="brand">
-            <div className="brand-icon">🤖</div>
-            <div className="brand-title">Santhosh Chat</div>
+          <div className="brand" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div className="brand-icon">🤖</div>
+              <div className="brand-title">Santhosh Chat</div>
+            </div>
+            <button className="sidebar-close-btn" onClick={() => setSidebarOpen(false)} aria-label="Close sidebar">
+              &times;
+            </button>
           </div>
-          <button className="new-chat-btn" onClick={createNewThread}>
+          <button className="new-chat-btn" onClick={() => { createNewThread(); setSidebarOpen(false); }}>
             <span>➕</span> New Chat
           </button>
         </div>
@@ -472,17 +496,12 @@ function App() {
             <div
               key={thread.id}
               className={`thread-item ${activeThreadId === thread.id ? 'active' : ''}`}
-              onClick={() => setActiveThreadId(thread.id)}
+              onClick={() => { setActiveThreadId(thread.id); setSidebarOpen(false); }}
             >
               <div className="thread-details">
                 <span className="thread-title">{thread.title || 'New Chat'}</span>
                 <div className="thread-meta">
                   <span>💬 Chat</span>
-                  {/* {thread.document_name && (
-                    <span className="doc-tag" title={thread.document_name}>
-                      📄 {thread.document_name}
-                    </span>
-                  )} */}
                 </div>
               </div>
               <button
@@ -507,11 +526,16 @@ function App() {
       <main className="main-panel">
         {/* Header Bar */}
         <header className="header-bar">
-          <div className="header-title-container">
-            <h1 className="header-title">{threadTitle}</h1>
-            <span className="header-subtitle">
-              {activeDocuments.length > 0 ? 'Document RAG Context Active' : 'Santhosh AI Assistant'}
-            </span>
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            <button className="menu-toggle-btn" onClick={() => setSidebarOpen(true)} aria-label="Open sidebar">
+              &#9776;
+            </button>
+            <div className="header-title-container">
+              <h1 className="header-title">{threadTitle}</h1>
+              <span className="header-subtitle">
+                {activeDocuments.length > 0 ? 'Document RAG Context Active' : 'Santhosh AI Assistant'}
+              </span>
+            </div>
           </div>
         </header>
 
