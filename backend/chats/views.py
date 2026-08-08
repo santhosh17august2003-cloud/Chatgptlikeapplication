@@ -168,9 +168,8 @@ def auth_login(request):
             status=status.HTTP_401_UNAUTHORIZED
         )
 
-    # Delete existing tokens to ensure fresh sessions
-    UserToken.objects.filter(user=user).delete()
-    token_obj = UserToken.objects.create(user=user)
+    # Get or create token to allow concurrent sessions across multiple devices
+    token_obj, _ = UserToken.objects.get_or_create(user=user)
 
     return Response({
         'message': 'Login successful!',
