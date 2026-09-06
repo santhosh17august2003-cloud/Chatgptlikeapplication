@@ -84,10 +84,50 @@ WSGI_APPLICATION = 'backend.wsgi.application'
 # Uses DATABASE_URL (Render PostgreSQL) if set, otherwise falls back to local MySQL/SQLite
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
+# DATABASE_URL = os.getenv('DATABASE_URL')
+
+# if DATABASE_URL:
+#     # Production: Render PostgreSQL via DATABASE_URL
+#     DATABASES = {
+#         'default': dj_database_url.config(
+#             default=DATABASE_URL,
+#             conn_max_age=600
+#         )
+#     }
+#     print("--- Connected to production database via DATABASE_URL ---")
+# else:
+#     # Local development: MySQL with SQLite fallback
+#     DB_NAME = os.getenv('DB_NAME', 'chat_rag_db')
+#     DB_USER = os.getenv('DB_USER', 'root')
+#     DB_PASSWORD = os.getenv('DB_PASSWORD', '12345678')
+#     DB_HOST = os.getenv('DB_HOST', '127.0.0.1')
+#     DB_PORT = os.getenv('DB_PORT', '3306')
+
+#     # Mock MySQLdb using PyMySQL
+#     try:
+#         import pymysql
+#         pymysql.install_as_MySQLdb()
+#     except ImportError:
+#         pass
+
+#     DATABASES = {
+#         'default': {
+#             'ENGINE': 'django.db.backends.mysql',
+#             'NAME': DB_NAME,
+#             'USER': DB_USER,
+#             'PASSWORD': DB_PASSWORD,
+#             'HOST': DB_HOST,
+#             'PORT': DB_PORT,
+#             'OPTIONS': {
+#                 'charset': 'utf8mb4',
+#             }
+#         }
+#     }
+
 DATABASE_URL = os.getenv('DATABASE_URL')
 
 if DATABASE_URL:
-    # Production: Render PostgreSQL via DATABASE_URL
+    # Production database via DATABASE_URL
     DATABASES = {
         'default': dj_database_url.config(
             default=DATABASE_URL,
@@ -95,15 +135,15 @@ if DATABASE_URL:
         )
     }
     print("--- Connected to production database via DATABASE_URL ---")
+
 else:
-    # Local development: MySQL with SQLite fallback
+    # Local development: MySQL
     DB_NAME = os.getenv('DB_NAME', 'chat_rag_db')
     DB_USER = os.getenv('DB_USER', 'root')
     DB_PASSWORD = os.getenv('DB_PASSWORD', '12345678')
     DB_HOST = os.getenv('DB_HOST', '127.0.0.1')
     DB_PORT = os.getenv('DB_PORT', '3306')
 
-    # Mock MySQLdb using PyMySQL
     try:
         import pymysql
         pymysql.install_as_MySQLdb()
