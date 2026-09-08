@@ -91,30 +91,29 @@ def get_authenticated_user(request):
 
 @api_view(['POST'])
 def auth_register(request):
-
-    username = request.data.get('username', '').strip()
-    email = request.data.get('email', '').strip()
-    password = request.data.get('password', '').strip()
-
-    if not username or not email or not password:
-        return Response(
-            {'error': 'Username, email, and password are required.'},
-            status=status.HTTP_400_BAD_REQUEST
-        )
-
-    if User.objects.filter(username=username).exists():
-        return Response(
-            {'error': 'Username is already taken.'},
-            status=status.HTTP_400_BAD_REQUEST
-        )
-
-    if User.objects.filter(email=email).exists():
-        return Response(
-            {'error': 'Email is already registered.'},
-            status=status.HTTP_400_BAD_REQUEST
-        )
-
     try:
+        username = request.data.get('username', '').strip()
+        email = request.data.get('email', '').strip()
+        password = request.data.get('password', '').strip()
+
+        if not username or not email or not password:
+            return Response(
+                {'error': 'Username, email, and password are required.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if User.objects.filter(username=username).exists():
+            return Response(
+                {'error': 'Username is already taken.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if User.objects.filter(email=email).exists():
+            return Response(
+                {'error': 'Email is already registered.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         user = User.objects.create_user(
             username=username,
             email=email,
@@ -127,8 +126,9 @@ def auth_register(request):
             'username': user.username
         }, status=status.HTTP_201_CREATED)
     except Exception as err:
+        logger.error(f"Registration error: {err}", exc_info=True)
         return Response(
-            {'error': f'Failed to create user: {str(err)}'},
+            {'error': f'Registration failed: {str(err)}'},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
@@ -137,34 +137,41 @@ def auth_login(request):
     """
     POST: Login verification, returns a session token on success.
     """
-    username_or_email = request.data.get('username', '').strip()
-    password = request.data.get('password', '').strip()
+    try:
+        username_or_email = request.data.get('username', '').strip()
+        password = request.data.get('password', '').strip()
 
-    if not username_or_email or not password:
+        if not username_or_email or not password:
+            return Response(
+                {'error': 'Username/Email and password are required.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Resolve by username or email
+        user = User.objects.filter(username=username_or_email).first()
+        if not user:
+            user = User.objects.filter(email=username_or_email).first()
+
+        if not user or not user.check_password(password):
+            return Response(
+                {'error': 'Invalid credentials.'},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+
+        # Get or create token to allow concurrent sessions across multiple devices
+        token_obj, _ = UserToken.objects.get_or_create(user=user)
+
+        return Response({
+            'message': 'Login successful!',
+            'token': str(token_obj.token),
+            'username': user.username
+        })
+    except Exception as err:
+        logger.error(f"Login error: {err}", exc_info=True)
         return Response(
-            {'error': 'Username/Email and password are required.'},
-            status=status.HTTP_400_BAD_REQUEST
+            {'error': f'Login failed: {str(err)}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
-
-    # Resolve by username or email
-    user = User.objects.filter(username=username_or_email).first()
-    if not user:
-        user = User.objects.filter(email=username_or_email).first()
-
-    if not user or not user.check_password(password):
-        return Response(
-            {'error': 'Invalid credentials.'},
-            status=status.HTTP_401_UNAUTHORIZED
-        )
-
-    # Get or create token to allow concurrent sessions across multiple devices
-    token_obj, _ = UserToken.objects.get_or_create(user=user)
-
-    return Response({
-        'message': 'Login successful!',
-        'token': str(token_obj.token),
-        'username': user.username
-    })
 
 @api_view(['POST'])
 def auth_request_otp(request):
