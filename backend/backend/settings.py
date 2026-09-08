@@ -233,6 +233,10 @@ frontend_url_env = os.getenv('FRONTEND_URL', '')
 cors_origins_env = os.getenv('CORS_ALLOWED_ORIGINS', '')
 
 default_origins = [
+    'https://chatdocgpt.online',
+    'https://www.chatdocgpt.online',
+    'http://chatdocgpt.online',
+    'http://www.chatdocgpt.online',
     'http://localhost:5173',
     'http://127.0.0.1:5173',
     'http://localhost:3000',
@@ -249,6 +253,10 @@ if cors_origins_env:
             default_origins.append(u.strip().rstrip('/'))
 
 CORS_ALLOWED_ORIGINS = list(dict.fromkeys(default_origins))
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^https:\/\/.*\.chatdocgpt\.online$",
+    r"^https:\/\/.*\.onrender\.com$",
+]
 CORS_ALLOW_CREDENTIALS = True
 
 CORS_ALLOW_METHODS = [
@@ -275,6 +283,10 @@ CORS_ALLOW_HEADERS = [
 # CSRF Trusted Origins
 csrf_trusted_env = os.getenv('CSRF_TRUSTED_ORIGINS', '')
 default_csrf = [
+    'https://chatdocgpt.online',
+    'https://www.chatdocgpt.online',
+    'http://chatdocgpt.online',
+    'http://www.chatdocgpt.online',
     'http://localhost:5173',
     'http://127.0.0.1:5173',
     'http://localhost:3000',
