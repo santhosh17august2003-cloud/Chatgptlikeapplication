@@ -12,13 +12,16 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 
 from pathlib import Path
 import os
-# import sys
 from dotenv import load_dotenv
 import dj_database_url
-import pymysql
 
-
-pymysql.install_as_MySQLdb()
+# Configure PyMySQL as MySQLdb client for Django with version check patch
+try:
+    import pymysql
+    pymysql.version_info = (2, 2, 6, "final", 0)
+    pymysql.install_as_MySQLdb()
+except ImportError:
+    pass
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -30,12 +33,24 @@ load_dotenv(os.path.join(BASE_DIR, '.env'))
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-+g!87#jdpv#3=m715hs%hp_7$9k+0al)%hto9+bb9vf8rmj69@')
+SECRET_KEY = os.getenv(
+    'SECRET_KEY',
+    'django-insecure-+g!87#jdpv#3=m715hs%hp_7$9k+0al)%hto9+bb9vf8rmj69@'
+)
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv('DEBUG', 'True') == 'True'
+is_render = os.getenv('RENDER') is not None
+default_debug = 'False' if is_render else 'True'
+DEBUG = os.getenv('DEBUG', default_debug).lower() in ('true', '1', 'yes')
 
-ALLOWED_HOSTS = ['*']
+# Allowed Hosts
+allowed_hosts_env = os.getenv('ALLOWED_HOSTS', '')
+if allowed_hosts_env:
+    ALLOWED_HOSTS = [h.strip() for h in allowed_hosts_env.split(',') if h.strip()]
+    if '.onrender.com' not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append('.onrender.com')
+else:
+    ALLOWED_HOSTS = ['*']
 
 
 # Application definition
@@ -84,175 +99,70 @@ TEMPLATES = [
 WSGI_APPLICATION = 'backend.wsgi.application'
 
 
-# Database Configuration
-# Uses DATABASE_URL (Render PostgreSQL) if set, otherwise falls back to local MySQL/SQLite
-# https://docs.djangoproject.com/en/5.2/ref/settings/#databases
+# ==============================================================================
+# Database Configuration - Persistent MySQL with Cloud & Local Support
+# ==============================================================================
+# Priority:
+# 1. DATABASE_URL / MYSQL_URL (e.g. Aiven MySQL, PlanetScale, AWS RDS, Railway)
+# 2. Individual env variables: DB_NAME/MYSQL_DATABASE, DB_USER, DB_PASSWORD, DB_HOST, DB_PORT
+# 3. Local fallback to SQLite if no MySQL server is reachable or configured
 
-# DATABASE_URL = os.getenv('DATABASE_URL')
+database_url = os.getenv('DATABASE_URL') or os.getenv('MYSQL_URL')
 
-# if DATABASE_URL:
-#     # Production: Render PostgreSQL via DATABASE_URL
-#     DATABASES = {
-#         'default': dj_database_url.config(
-#             default=DATABASE_URL,
-#             conn_max_age=600
-#         )
-#     }
-#     print("--- Connected to production database via DATABASE_URL ---")
-# else:
-#     # Local development: MySQL with SQLite fallback
-#     DB_NAME = os.getenv('DB_NAME', 'chat_rag_db')
-#     DB_USER = os.getenv('DB_USER', 'root')
-#     DB_PASSWORD = os.getenv('DB_PASSWORD', '12345678')
-#     DB_HOST = os.getenv('DB_HOST', '127.0.0.1')
-#     DB_PORT = os.getenv('DB_PORT', '3306')
+if database_url:
+    # Parse production database via DATABASE_URL
+    db_config = dj_database_url.config(
+        default=database_url,
+        conn_max_age=600,
+        conn_health_checks=True,
+    )
+    if 'mysql' in db_config.get('ENGINE', ''):
+        db_config.setdefault('OPTIONS', {})
+        db_config['OPTIONS']['charset'] = 'utf8mb4'
+        
+        # Remove invalid query parameter 'ssl-mode' which breaks PyMySQL kwargs
+        ssl_mode = db_config['OPTIONS'].pop('ssl-mode', None) or db_config['OPTIONS'].pop('ssl_mode', None)
+        host = db_config.get('HOST', '')
+        
+        # Remote cloud databases (like Aiven) require SSL/TLS
+        if ssl_mode or os.getenv('DB_SSL', 'true').lower() in ('true', '1', 'yes', 'required') or (host and host not in ('localhost', '127.0.0.1')):
+            if 'ssl' not in db_config['OPTIONS']:
+                db_config['OPTIONS']['ssl'] = {}
 
-#     # Mock MySQLdb using PyMySQL
-#     try:
-#         import pymysql
-#         pymysql.install_as_MySQLdb()
-#     except ImportError:
-#         pass
-
-#     DATABASES = {
-#         'default': {
-#             'ENGINE': 'django.db.backends.mysql',
-#             'NAME': DB_NAME,
-#             'USER': DB_USER,
-#             'PASSWORD': DB_PASSWORD,
-#             'HOST': DB_HOST,
-#             'PORT': DB_PORT,
-#             'OPTIONS': {
-#                 'charset': 'utf8mb4',
-#             }
-#         }
-#     }
-
-# DATABASE_URL = os.getenv('DATABASE_URL')
-
-# if DATABASE_URL:
-#     # Production database via DATABASE_URL
-#     DATABASES = {
-#         'default': dj_database_url.config(
-#             default=DATABASE_URL,
-#             conn_max_age=600
-#         )
-#     }
-#     print("--- Connected to production database via DATABASE_URL ---")
-
-# else:
-#     # Local development: MySQL
-#     DB_NAME = os.getenv('DB_NAME', 'chat_rag_db')
-#     DB_USER = os.getenv('DB_USER', 'root')
-#     DB_PASSWORD = os.getenv('DB_PASSWORD', '12345678')
-#     DB_HOST = os.getenv('DB_HOST', '127.0.0.1')
-#     DB_PORT = os.getenv('DB_PORT', '3306')
-
-#     DATABASES = {
-#         'default': {
-#             'ENGINE': 'django.db.backends.mysql',
-#             'NAME': DB_NAME,
-#             'USER': DB_USER,
-#             'PASSWORD': DB_PASSWORD,
-#             'HOST': DB_HOST,
-#             'PORT': DB_PORT,
-#             'OPTIONS': {
-#                 'charset': 'utf8mb4',
-#             }
-#         }
-#     }
-# else:
-#     # Local development: MySQL
-#     DB_NAME = os.getenv('DB_NAME', 'chat_rag_db')
-#     DB_USER = os.getenv('DB_USER', 'root')
-#     DB_PASSWORD = os.getenv('DB_PASSWORD', '12345678')
-#     DB_HOST = os.getenv('DB_HOST', '127.0.0.1')
-#     DB_PORT = os.getenv('DB_PORT', '3306')
-
-#     try:
-#         import pymysql
-#         pymysql.install_as_MySQLdb()
-#     except ImportError:
-#         pass
-
-#     DATABASES = {
-#         'default': {
-#             'ENGINE': 'django.db.backends.mysql',
-#             'NAME': DB_NAME,
-#             'USER': DB_USER,
-#             'PASSWORD': DB_PASSWORD,
-#             'HOST': DB_HOST,
-#             'PORT': DB_PORT,
-#             'OPTIONS': {
-#                 'charset': 'utf8mb4',
-#             }
-#         }
-#     }
-# Database Configuration
-
-DATABASE_URL = os.getenv('DATABASE_URL')
-
-if DATABASE_URL:
-    # Production: Aiven MySQL via DATABASE_URL
-    DATABASES = {
-        'default': dj_database_url.config(
-            default=DATABASE_URL,
-            conn_max_age=600
-        )
-    }
-    print("--- Connected to production database via DATABASE_URL ---")
-
+    DATABASES = {'default': db_config}
 else:
-    # Local development: MySQL
-    DB_NAME = os.getenv('DB_NAME', 'chat_rag_db')
-    DB_USER = os.getenv('DB_USER', 'root')
-    DB_PASSWORD = os.getenv('DB_PASSWORD', '12345678')
-    DB_HOST = os.getenv('DB_HOST', '127.0.0.1')
-    DB_PORT = os.getenv('DB_PORT', '3306')
+    # Check individual MySQL credentials
+    db_name = os.getenv('DB_NAME') or os.getenv('MYSQL_DATABASE') or os.getenv('MYSQLDATABASE')
+    db_user = os.getenv('DB_USER') or os.getenv('MYSQL_USER') or os.getenv('MYSQLUSER')
+    db_password = os.getenv('DB_PASSWORD') or os.getenv('MYSQL_PASSWORD') or os.getenv('MYSQLPASSWORD')
+    db_host = os.getenv('DB_HOST') or os.getenv('MYSQL_HOST') or os.getenv('MYSQLHOST')
+    db_port = os.getenv('DB_PORT') or os.getenv('MYSQL_PORT') or os.getenv('MYSQLPORT', '3306')
 
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.mysql',
-            'NAME': DB_NAME,
-            'USER': DB_USER,
-            'PASSWORD': DB_PASSWORD,
-            'HOST': DB_HOST,
-            'PORT': DB_PORT,
-            'OPTIONS': {
-                'charset': 'utf8mb4',
+    if db_host and db_name:
+        db_options = {'charset': 'utf8mb4'}
+        if db_host not in ('localhost', '127.0.0.1') or os.getenv('DB_SSL', '').lower() in ('true', '1', 'yes', 'required'):
+            db_options['ssl'] = {}
+
+        DATABASES = {
+            'default': {
+                'ENGINE': 'django.db.backends.mysql',
+                'NAME': db_name,
+                'USER': db_user or 'root',
+                'PASSWORD': db_password or '',
+                'HOST': db_host,
+                'PORT': int(db_port),
+                'OPTIONS': db_options,
+                'CONN_MAX_AGE': 600,
             }
         }
-    }
-
-    # if 'test' not in sys.argv:
-    #     try:
-    #         import MySQLdb
-    #         conn = MySQLdb.connect(
-    #             host=DB_HOST,
-    #             user=DB_USER,
-    #             passwd=DB_PASSWORD,
-    #             port=int(DB_PORT),
-    #             connect_timeout=2
-    #         )
-    #         cursor = conn.cursor()
-    #         cursor.execute(
-    #             f"CREATE DATABASE IF NOT EXISTS {DB_NAME}"
-    #             " CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-    #         )
-    #         conn.close()
-    #         print(f"--- Connected to MySQL database '{DB_NAME}' successfully! ---")
-    #     except Exception as e:
-    #         print("------------------------------------------------------")
-    #         print(f"WARNING: MySQL connection failed: {e}")
-    #         print("Falling back to local SQLite database for development.")
-    #         print("------------------------------------------------------")
-    #         DATABASES = {
-    #             'default': {
-    #                 'ENGINE': 'django.db.backends.sqlite3',
-    #                 'NAME': BASE_DIR / 'db.sqlite3',
-    #             }
-    #         }
-
+    else:
+        # Fallback for local development if MySQL is not configured
+        DATABASES = {
+            'default': {
+                'ENGINE': 'django.db.backends.sqlite3',
+                'NAME': BASE_DIR / 'db.sqlite3',
+            }
+        }
 
 
 # Password validation
@@ -291,7 +201,15 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
-STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage",
+    },
+}
+WHITENOISE_MANIFEST_STRICT = False
 
 # Media files (for uploaded documents)
 MEDIA_URL = '/media/'
@@ -302,7 +220,116 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-CORS_ALLOW_ALL_ORIGINS = True  # Enable for dev frontend
+
+# ==============================================================================
+# CORS & CSRF Configuration
+# ==============================================================================
+
+CORS_ALLOW_ALL_ORIGINS = os.getenv('CORS_ALLOW_ALL_ORIGINS', 'False').lower() in ('true', '1', 'yes')
+
+# Read frontend and CORS allowed origins from environment
+frontend_url_env = os.getenv('FRONTEND_URL', '')
+cors_origins_env = os.getenv('CORS_ALLOWED_ORIGINS', '')
+
+default_origins = [
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+]
+if frontend_url_env:
+    for u in frontend_url_env.split(','):
+        if u.strip():
+            default_origins.append(u.strip().rstrip('/'))
+
+if cors_origins_env:
+    for u in cors_origins_env.split(','):
+        if u.strip():
+            default_origins.append(u.strip().rstrip('/'))
+
+CORS_ALLOWED_ORIGINS = list(dict.fromkeys(default_origins))
+CORS_ALLOW_CREDENTIALS = True
+
+CORS_ALLOW_METHODS = [
+    'DELETE',
+    'GET',
+    'OPTIONS',
+    'PATCH',
+    'POST',
+    'PUT',
+]
+
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+]
+
+# CSRF Trusted Origins
+csrf_trusted_env = os.getenv('CSRF_TRUSTED_ORIGINS', '')
+default_csrf = [
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'https://*.onrender.com',
+]
+if frontend_url_env:
+    for u in frontend_url_env.split(','):
+        if u.strip():
+            default_csrf.append(u.strip().rstrip('/'))
+
+if csrf_trusted_env:
+    for u in csrf_trusted_env.split(','):
+        if u.strip():
+            default_csrf.append(u.strip().rstrip('/'))
+
+CSRF_TRUSTED_ORIGINS = list(dict.fromkeys(default_csrf))
+
+
+# ==============================================================================
+# Logging Configuration
+# ==============================================================================
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '[{asctime}] {levelname} {name} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': os.getenv('DJANGO_LOG_LEVEL', 'INFO'),
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console'],
+            'level': os.getenv('DJANGO_LOG_LEVEL', 'INFO'),
+            'propagate': False,
+        },
+        'chats': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+    },
+}
+
 
 # Email configurations
 if os.getenv('RENDER'):
@@ -317,5 +344,3 @@ EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True') == 'True'
 EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', 'santhoshlogu1782003@gmail.com')
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', 'woba jgwb uogd jizi')
 DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', EMAIL_HOST_USER)
-
-

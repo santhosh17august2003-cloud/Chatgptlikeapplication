@@ -5,7 +5,9 @@ import Login from './components/Login';
 import Register from './components/Register';
 import ForgotPassword from './components/ForgotPassword';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://chatgptlikeapplication.onrender.com/api';
+const API_BASE_URL = (
+  import.meta.env.VITE_API_BASE_URL || 'https://chatgptlikeapplication-1.onrender.com/api'
+).replace(/\/+$/, '');
 
 function App() {
   // Authentication states
