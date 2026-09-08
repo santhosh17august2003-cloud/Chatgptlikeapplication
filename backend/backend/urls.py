@@ -2,10 +2,12 @@ from django.contrib import admin
 from django.urls import path, include, re_path
 from django.conf import settings
 from django.conf.urls.static import static
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 from django.views.static import serve
 
 def health_check(request):
+    if request.method == 'HEAD':
+        return HttpResponse(status=200)
     return JsonResponse({
         "status": "ok",
         "message": "Django backend is running"
