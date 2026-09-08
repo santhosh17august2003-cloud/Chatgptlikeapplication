@@ -16,9 +16,7 @@ def health_check(request):
     error_msg = None
 
     try:
-        with connection.cursor() as cursor:
-            cursor.execute("SHOW TABLES;")
-            tables = [row[0] for row in cursor.fetchall()]
+        tables = connection.introspection.table_names()
         db_status = "connected"
     except Exception as e:
         db_status = "error"

@@ -107,30 +107,85 @@ WSGI_APPLICATION = 'backend.wsgi.application'
 # 2. Individual env variables: DB_NAME/MYSQL_DATABASE, DB_USER, DB_PASSWORD, DB_HOST, DB_PORT
 # 3. Local fallback to SQLite if no MySQL server is reachable or configured
 
+def _test_db_connectivity(config):
+    """Test whether the configured database is actually reachable."""
+    engine = config.get('ENGINE', '')
+    host = config.get('HOST', '')
+    if not host or host in ('localhost', '127.0.0.1') and 'sqlite' in engine:
+        return True, None
+
+    if 'mysql' in engine:
+        try:
+            import pymysql
+            port = int(config.get('PORT') or 3306)
+            user = config.get('USER') or 'root'
+            passwd = config.get('PASSWORD') or ''
+            db = config.get('NAME') or ''
+            ssl_opt = config.get('OPTIONS', {}).get('ssl')
+            conn = pymysql.connect(
+                host=host,
+                port=port,
+                user=user,
+                password=passwd,
+                database=db,
+                connect_timeout=4,
+                ssl=ssl_opt if ssl_opt else None
+            )
+            conn.close()
+            return True, None
+        except Exception as exc:
+            return False, f"MySQL connection test failed ({host}:{port}): {exc}"
+
+    elif 'postgres' in engine:
+        try:
+            import psycopg2
+            port = int(config.get('PORT') or 5432)
+            user = config.get('USER') or 'postgres'
+            passwd = config.get('PASSWORD') or ''
+            db = config.get('NAME') or ''
+            conn = psycopg2.connect(
+                host=host,
+                port=port,
+                user=user,
+                password=passwd,
+                dbname=db,
+                connect_timeout=4
+            )
+            conn.close()
+            return True, None
+        except Exception as exc:
+            return False, f"PostgreSQL connection test failed ({host}:{port}): {exc}"
+
+    return True, None
+
 database_url = os.getenv('DATABASE_URL') or os.getenv('MYSQL_URL')
+target_db = None
 
 if database_url:
-    # Parse production database via DATABASE_URL
-    db_config = dj_database_url.config(
-        default=database_url,
-        conn_max_age=0,
-    )
-    if 'mysql' in db_config.get('ENGINE', ''):
-        db_config.setdefault('OPTIONS', {})
-        db_config['OPTIONS']['charset'] = 'utf8mb4'
-        if not db_config.get('NAME'):
-            db_config['NAME'] = 'defaultdb'
-        
-        # Remove invalid query parameter 'ssl-mode' which breaks PyMySQL kwargs
-        ssl_mode = db_config['OPTIONS'].pop('ssl-mode', None) or db_config['OPTIONS'].pop('ssl_mode', None)
-        host = db_config.get('HOST', '')
-        
-        # Remote cloud databases (like Aiven) require SSL/TLS
-        if ssl_mode or os.getenv('DB_SSL', 'true').lower() in ('true', '1', 'yes', 'required') or (host and host not in ('localhost', '127.0.0.1')):
-            if 'ssl' not in db_config['OPTIONS']:
-                db_config['OPTIONS']['ssl'] = {}
+    try:
+        db_config = dj_database_url.config(
+            default=database_url,
+            conn_max_age=0,
+        )
+        if 'mysql' in db_config.get('ENGINE', ''):
+            db_config.setdefault('OPTIONS', {})
+            db_config['OPTIONS']['charset'] = 'utf8mb4'
+            if not db_config.get('NAME'):
+                db_config['NAME'] = 'defaultdb'
+            
+            ssl_mode = db_config['OPTIONS'].pop('ssl-mode', None) or db_config['OPTIONS'].pop('ssl_mode', None)
+            host = db_config.get('HOST', '')
+            if ssl_mode or os.getenv('DB_SSL', 'true').lower() in ('true', '1', 'yes', 'required') or (host and host not in ('localhost', '127.0.0.1')):
+                if 'ssl' not in db_config['OPTIONS']:
+                    db_config['OPTIONS']['ssl'] = {}
 
-    DATABASES = {'default': db_config}
+        is_ok, err_msg = _test_db_connectivity(db_config)
+        if is_ok:
+            target_db = db_config
+        else:
+            print(f"[DB Notice] {err_msg} -> Falling back to SQLite.")
+    except Exception as e:
+        print(f"[DB Notice] Error parsing DATABASE_URL: {e} -> Falling back to SQLite.")
 else:
     # Check individual MySQL credentials
     db_name = os.getenv('DB_NAME') or os.getenv('MYSQL_DATABASE') or os.getenv('MYSQLDATABASE')
@@ -144,26 +199,31 @@ else:
         if db_host not in ('localhost', '127.0.0.1') or os.getenv('DB_SSL', '').lower() in ('true', '1', 'yes', 'required'):
             db_options['ssl'] = {}
 
-        DATABASES = {
-            'default': {
-                'ENGINE': 'django.db.backends.mysql',
-                'NAME': db_name,
-                'USER': db_user or 'root',
-                'PASSWORD': db_password or '',
-                'HOST': db_host,
-                'PORT': int(db_port),
-                'OPTIONS': db_options,
-                'CONN_MAX_AGE': 600,
-            }
+        my_config = {
+            'ENGINE': 'django.db.backends.mysql',
+            'NAME': db_name,
+            'USER': db_user or 'root',
+            'PASSWORD': db_password or '',
+            'HOST': db_host,
+            'PORT': int(db_port),
+            'OPTIONS': db_options,
+            'CONN_MAX_AGE': 0,
         }
-    else:
-        # Fallback for local development if MySQL is not configured
-        DATABASES = {
-            'default': {
-                'ENGINE': 'django.db.backends.sqlite3',
-                'NAME': BASE_DIR / 'db.sqlite3',
-            }
+        is_ok, err_msg = _test_db_connectivity(my_config)
+        if is_ok:
+            target_db = my_config
+        else:
+            print(f"[DB Notice] {err_msg} -> Falling back to SQLite.")
+
+if target_db:
+    DATABASES = {'default': target_db}
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
         }
+    }
 
 
 # Password validation
