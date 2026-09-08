@@ -9,6 +9,7 @@ and user authentication workflows (register, login, forgot password OTP).
 # pylint: disable=broad-exception-caught
 
 import os
+import io
 import json
 import logging
 import random
@@ -34,7 +35,6 @@ logger = logging.getLogger(__name__)
 
 # Initialize Gemini API Configuration
 def configure_gemini():
-    
     api_key = os.getenv("GEMINI_API_KEY", "").strip()
     if not api_key or api_key == "your_gemini_api_key_here":
         raise ValueError(
@@ -43,9 +43,26 @@ def configure_gemini():
         )
     genai.configure(api_key=api_key)
 
+# Helper: Safely extract flat float list from Gemini embedding response
+def extract_embedding_vector(raw_emb):
+    if not raw_emb:
+        return []
+    if isinstance(raw_emb, dict):
+        if 'values' in raw_emb:
+            return [float(x) for x in raw_emb['values']]
+        if 'embedding' in raw_emb:
+            return extract_embedding_vector(raw_emb['embedding'])
+    elif isinstance(raw_emb, list):
+        if len(raw_emb) > 0 and isinstance(raw_emb[0], (int, float)):
+            return [float(x) for x in raw_emb]
+        elif len(raw_emb) > 0 and isinstance(raw_emb[0], dict):
+            return extract_embedding_vector(raw_emb[0])
+        elif len(raw_emb) > 0 and isinstance(raw_emb[0], list):
+            return extract_embedding_vector(raw_emb[0])
+    return []
+
 # Helper: Chunk Text
 def chunk_text(text, chunk_size=800, overlap=150):
- 
     chunks = []
     start = 0
     text_len = len(text)
@@ -64,10 +81,16 @@ def chunk_text(text, chunk_size=800, overlap=150):
 
 # Helper: Cosine Similarity
 def cosine_similarity(vec1, vec2):
-
-    if not vec1 or not vec2:
+    v1 = extract_embedding_vector(vec1) if not (isinstance(vec1, list) and vec1 and isinstance(vec1[0], (int, float))) else vec1
+    v2 = extract_embedding_vector(vec2) if not (isinstance(vec2, list) and vec2 and isinstance(vec2[0], (int, float))) else vec2
+    if not v1 or not v2 or len(v1) != len(v2):
         return 0.0
-    return sum(a * b for a, b in zip(vec1, vec2))
+    dot = sum(a * b for a, b in zip(v1, v2))
+    norm_a = sum(a * a for a in v1) ** 0.5
+    norm_b = sum(b * b for b in v2) ** 0.5
+    if norm_a == 0.0 or norm_b == 0.0:
+        return 0.0
+    return dot / (norm_a * norm_b)
 
 # Helper: Get Authenticated User
 def get_authenticated_user(request):
@@ -457,24 +480,35 @@ def upload_document(request, thread_id):
     )
 
     text_content = ""
-    file_path = doc.file.path
-
     try:
         if ext == '.pdf':
-            reader = PdfReader(file_path)
+            uploaded_file.seek(0)
+            reader = PdfReader(io.BytesIO(uploaded_file.read()))
             for page in reader.pages:
                 page_text = page.extract_text()
                 if page_text:
                     text_content += page_text + "\n"
         elif ext == '.txt':
-            with open(file_path, 'r', encoding='utf-8', errors='ignore') as file_obj:
-                text_content = file_obj.read()
+            uploaded_file.seek(0)
+            text_content = uploaded_file.read().decode('utf-8', errors='ignore')
     except Exception as err:
-        doc.delete()
-        return Response(
-            {'error': f'Failed to parse file: {str(err)}'},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
+        logger.warning(f"BytesIO extraction failed: {err}. Falling back to file path.")
+        try:
+            if ext == '.pdf':
+                reader = PdfReader(doc.file.path)
+                for page in reader.pages:
+                    page_text = page.extract_text()
+                    if page_text:
+                        text_content += page_text + "\n"
+            elif ext == '.txt':
+                with open(doc.file.path, 'r', encoding='utf-8', errors='ignore') as file_obj:
+                    text_content = file_obj.read()
+        except Exception as inner_err:
+            doc.delete()
+            return Response(
+                {'error': f'Failed to parse file: {str(inner_err)}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
     if not text_content.strip():
         doc.delete()
@@ -491,28 +525,23 @@ def upload_document(request, thread_id):
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    try:
-        batch_size = 20
-        for i in range(0, len(chunks), batch_size):
-            batch_chunks = chunks[i:i+batch_size]
-            response = genai.embed_content(
+    # Safely index each chunk with embedding
+    for idx, chunk in enumerate(chunks):
+        emb_vector = []
+        try:
+            res = genai.embed_content(
                 model="models/gemini-embedding-001",
-                content=batch_chunks
+                content=chunk
             )
+            emb_vector = extract_embedding_vector(res.get('embedding', res))
+        except Exception as emb_err:
+            logger.warning(f"Embedding failed for chunk {idx}: {emb_err}")
+            emb_vector = []
 
-            embeddings = response.get('embedding', [])
-            for idx, emb in enumerate(embeddings):
-                chunk_index = i + idx
-                DocumentChunk.objects.create(
-                    document=doc,
-                    content=chunks[chunk_index],
-                    embedding_json=json.dumps(emb)
-                )
-    except Exception as err:
-        doc.delete()
-        return Response(
-            {'error': f'Gemini Embedding generation failed: {str(err)}'},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        DocumentChunk.objects.create(
+            document=doc,
+            content=chunk,
+            embedding_json=json.dumps(emb_vector)
         )
 
     # Save a status message indicating document upload in the chat history
@@ -521,8 +550,6 @@ def upload_document(request, thread_id):
         role='user',
         content=f"📄 [Document Uploaded: {uploaded_file.name}]"
     )
-
-
 
     return Response({
         'message': 'File uploaded and indexed successfully!',
@@ -572,7 +599,6 @@ def send_message(request, thread_id):
     )
 
     if thread.title == "New Chat":
-        # Strip status indicators and use clean first question as title
         clean_content = user_content.strip()
         if not clean_content.startswith("📄 [Document Uploaded:"):
             title_suggestion = clean_content[:40] + ("..." if len(clean_content) > 40 else "")
@@ -590,29 +616,37 @@ def send_message(request, thread_id):
                 )
 
             # 1. RAG Mode
-            query_response = genai.embed_content(
-                model="models/gemini-embedding-001",
-                content=user_content
-            )
-            emb_result = query_response.get('embedding', [])
-
-            if len(emb_result) > 0 and isinstance(emb_result[0], list):
-                query_embedding = emb_result[0]
-            else:
-                query_embedding = emb_result
+            query_embedding = []
+            try:
+                query_response = genai.embed_content(
+                    model="models/gemini-embedding-001",
+                    content=user_content
+                )
+                query_embedding = extract_embedding_vector(query_response.get('embedding', query_response))
+            except Exception as q_err:
+                logger.warning(f"Query embedding error: {q_err}")
 
             chunks = DocumentChunk.objects.filter(document__in=docs)
 
             scored_chunks = []
             for chunk in chunks:
-                chunk_emb = json.loads(chunk.embedding_json)
-                similarity = cosine_similarity(query_embedding, chunk_emb)
-                scored_chunks.append((similarity, chunk.content))
+                chunk_emb = json.loads(chunk.embedding_json or "[]")
+                sim = cosine_similarity(query_embedding, chunk_emb) if query_embedding and chunk_emb else 0.0
+
+                # Keyword overlap boost to ensure relevance
+                user_keywords = [w.lower() for w in user_content.split() if len(w) > 3]
+                if user_keywords:
+                    overlap_count = sum(1 for kw in user_keywords if kw in chunk.content.lower())
+                    sim += (overlap_count / len(user_keywords)) * 0.5
+
+                scored_chunks.append((sim, chunk.content))
 
             scored_chunks.sort(key=lambda x: x[0], reverse=True)
             top_chunks = scored_chunks[:3]
 
-            context_text = "\n\n".join([chunk[1] for chunk in top_chunks])
+            context_text = "\n\n".join([chunk[1] for chunk in top_chunks if chunk[1]])
+            if not context_text.strip():
+                context_text = "\n\n".join([c.content for c in chunks[:3]])
 
             system_prompt = (
                 "You are an assistant trained to answer questions about the "
@@ -629,25 +663,52 @@ def send_message(request, thread_id):
                 system_instruction=system_prompt
             )
             completion_response = model.generate_content(user_prompt)
-            assistant_content = completion_response.text
+            try:
+                assistant_content = completion_response.text
+            except Exception:
+                if completion_response.candidates and completion_response.candidates[0].content.parts:
+                    assistant_content = completion_response.candidates[0].content.parts[0].text
+                else:
+                    assistant_content = "I could not generate an answer from the document context."
+
         else:
             # 2. General Chat Mode
             history_messages = thread.messages.all().order_by('created_at')
             contents = []
 
             for msg in history_messages:
+                if msg.content.startswith("📄 [Document Uploaded:"):
+                    continue
+
                 role = "user" if msg.role == "user" else "model"
-                contents.append({
-                    "role": role,
-                    "parts": [msg.content]
-                })
+                # Ensure strict alternation: do not append consecutive messages with the same role
+                if contents and contents[-1]["role"] == role:
+                    contents[-1]["parts"][0] += "\n" + msg.content
+                else:
+                    contents.append({
+                        "role": role,
+                        "parts": [msg.content]
+                    })
+
+            # Gemini requires the conversation to start with a user message
+            while contents and contents[0]["role"] != "user":
+                contents.pop(0)
+
+            if not contents:
+                contents = [{"role": "user", "parts": [user_content]}]
 
             model = genai.GenerativeModel(
                 model_name="gemini-2.5-flash",
                 system_instruction="You are a helpful and intelligent AI assistant."
             )
             completion_response = model.generate_content(contents)
-            assistant_content = completion_response.text
+            try:
+                assistant_content = completion_response.text
+            except Exception:
+                if completion_response.candidates and completion_response.candidates[0].content.parts:
+                    assistant_content = completion_response.candidates[0].content.parts[0].text
+                else:
+                    assistant_content = "I could not generate a response. Please try rephrasing your prompt."
 
         # Save Assistant message
         assistant_message = ChatMessage.objects.create(
@@ -667,6 +728,7 @@ def send_message(request, thread_id):
         })
 
     except Exception as err:
+        logger.error(f"Error in send_message: {err}", exc_info=True)
         return Response(
             {'error': f'Assistant failed to respond: {str(err)}'},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
