@@ -113,12 +113,13 @@ if database_url:
     # Parse production database via DATABASE_URL
     db_config = dj_database_url.config(
         default=database_url,
-        conn_max_age=600,
-        conn_health_checks=True,
+        conn_max_age=0,
     )
     if 'mysql' in db_config.get('ENGINE', ''):
         db_config.setdefault('OPTIONS', {})
         db_config['OPTIONS']['charset'] = 'utf8mb4'
+        if not db_config.get('NAME'):
+            db_config['NAME'] = 'defaultdb'
         
         # Remove invalid query parameter 'ssl-mode' which breaks PyMySQL kwargs
         ssl_mode = db_config['OPTIONS'].pop('ssl-mode', None) or db_config['OPTIONS'].pop('ssl_mode', None)
